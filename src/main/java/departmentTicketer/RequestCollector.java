@@ -10,6 +10,8 @@ import td.api.Logging.History;
 import td.api.Logging.*;
 
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.logging.Level;
 
@@ -17,13 +19,12 @@ import javax.annotation.Resource;
 import java.util.ArrayList;
 import java.util.Map;
 
-import static departmentTicketer.Ticketer.updateDeptTicket;
-
+import static departmentTicketer.CustomAttributeMapper.*;
 
 
 /**
  * This is the main driver, here we call all the functions needed to create the new
- *  tickets and upload them to TD. We also define the create and upload functions here.
+ *  tickets and upload them to TD (TeamDynamix). We also define the create and upload functions here.
  *
  * @author Jeremy Busch
  * @since 11/17/22
@@ -38,7 +39,12 @@ public class RequestCollector {
     private int reportsRunning = 0;
     private int ticketsRunning = 0;
 
-
+    @PostMapping(value = "/ping")
+    public @ResponseBody
+    ResponseEntity<String> ping() {
+        System.out.println("pong");
+        return ResponseEntity.status(HttpStatus.OK).body("pong");
+    }
 
 
     /**
@@ -67,45 +73,31 @@ public class RequestCollector {
     @RequestMapping(value = "/run-report", params = {"reportID"})
     public @ResponseBody
     String runReport(@RequestParam(value = "reportID") int reportId, @RequestHeader Map<String, String> headers
-    ) throws TDException {
+    ) throws TDException, InterruptedException {
         if (!headers.get("secret").equals(System.getenv("BSC_PROGRAM_SECRET")))
             return "I don't answer to you!";
 
         reportsRunning++;
-        History history = new History(ResourceType.NONE, "Temp History");
 
-        TeamDynamix TD = new TeamDynamix(
-            System.getenv("TD_API_BASE_URL"),
-            System.getenv("TD_USERNAME"),
-            System.getenv("TD_PASSWORD"),
-            history
-        );
         System.out.println("\tRun Report Request ID: " + reportId);
-        ArrayList<Map<String, String>> report =
-            TD.getReport(reportId, true, "").getDataRows();
+        ArrayList<Map<String, String>> report = TD.getReport(reportId, true, "").getDataRows();
 
-        int counter = 1;
+        int counter = 0;
+        ResponseEntity<String> response;
         for (Map<String, String> row : report) {
             //Get the ticket in the report
             int ticketId = (int) Float.parseFloat(row.get("TicketID"));
-            Ticket ticket = TD.getTicket(48, ticketId);
 
-            //check if a department ticket has been created
-            boolean hasDepartmentTicket = false;
-            if (ticket.getAttributesHashMap().containsKey(departmentTicketer.IDs.DEPARTMENT_TICKET_ID))
-                hasDepartmentTicket = true;
-
-            ResponseEntity<String> response;
-            if (!hasDepartmentTicket) {
-                response = CreateDeptTickets(ticket.getId(), headers);
-                System.out.println("\t" + response.getBody());
-            }
-            else {
-                System.out.println("\tSkipped " + ticketId + "\n\tNo department ticket needed.");
-            }
-            System.out.println("\tTicket number " + counter + " of " + report.size() + " complete.");
+            response = CreateDeptTicket(ticketId, headers);
             counter++;
 
+            System.out.println("\t" + response.getBody());
+            System.out.println("\tTicket number " + counter + " of " + report.size() + " complete.");
+
+            if (counter % 60 == 0){
+                System.out.println("Waiting 60 seconds to avoid 529 errors.");
+                Thread.sleep(60000);
+            }
         }
         reportsRunning--;
         return "Run Report Endpoint has Finished";
@@ -122,44 +114,70 @@ public class RequestCollector {
      */
     @RequestMapping(value = "/create-dept-tickets", params = {"ticketID"})
     public @ResponseBody
-    ResponseEntity<String> CreateDeptTickets(@RequestParam(value = "ticketID") int ticketID, @RequestHeader Map<String, String> headers){
+    ResponseEntity<String> CreateDeptTicket(@RequestParam(value = "ticketID") int ticketID, @RequestHeader Map<String, String> headers){
         History history = new History(ResourceType.TICKET, String.valueOf(ticketID));
 
         if (headers.get("secret").equals(System.getenv("BSC_PROGRAM_SECRET"))) {
             try {
-
                 TD = new TeamDynamix(System.getenv("TD_API_BASE_URL"), System.getenv("TD_USERNAME"), System.getenv("TD_PASSWORD"), history);
-                TD.login();
-
                 Ticket oneFormTicket = TD.getTicket(ONE_FORM_APPLICATION_ID, ticketID);
+                HashMap<Integer, CustomAttribute> oneFormTicketAttributes = oneFormTicket.getAttributesHashMap();
+                Ticketer ticketer;
 
-                if (!oneFormTicket.getAttributesHashMap().containsKey(IDs.DEPARTMENT_TICKET_ID)){
-                    history.addEvent(new LoggingEvent("ONE FORM TICKET ID: " + ticketID, "sendNewTicket", RequestCollector.class, Level.INFO));
-                    Ticketer ticketer = new Ticketer(oneFormTicket, history, TD, oneFormTicket.getAttributesHashMap());
+                boolean editTicket = false;
+
+                // Check if MDT Created Date attribute is present in Ticket
+                if (!oneFormTicketAttributes.containsKey(IDs.CREATED_DATE_MDT)) {
+                    editTicket = true;
+                    Date createdDate = oneFormTicket.getCreatedDate();
+                    createdDate.setTime(createdDate.getTime() - (IDs.MILLISECONDS_IN_AN_HOUR * 6)); //compensate for UTC to MDT
+                    SimpleDateFormat formatter = new SimpleDateFormat("MM-dd-yyyy");
+                    oneFormTicket.getAttributes().add(new CustomAttribute(IDs.CREATED_DATE_MDT, formatter.format(createdDate)));
+                }
+                // Check if the BSC Agent attribute is present in Ticket
+                if (!oneFormTicketAttributes.containsKey(IDs.BSC_AGENT_ID) && oneFormTicket.getFormId() != IDs.EMAIL_FORM_ID) {
+                    editTicket = true;
+                    oneFormTicket.getAttributes().add(new CustomAttribute(IDs.BSC_AGENT_ID, oneFormTicket.getCreatedUid()));
+                }
+                // If custom attributes were added then edit Ticket
+                if (editTicket)
+                    TD.editTicket(false, oneFormTicket);
+
+
+                // Check if Office List is abandoned or Spam
+                if (officeIsSpamOrAbandoned(oneFormTicketAttributes))
+                    history.addEvent(new LoggingEvent("Spam/Abandoned Ticket ID: " + ticketID, "CreateDeptTicket", RequestCollector.class, Level.INFO));
+                // Check if there is already a department ticket and if it needs to be updated
+                else if (NeedToUpdateDepartmentTicket(TD, oneFormTicket)) {
+                    ticketer = new Ticketer(oneFormTicket, history, TD, oneFormTicketAttributes);
+                    ticketer.updateDeptTicket(TD, oneFormTicket);
+                }
+                // Else create new department ticket
+                else {
+                    ticketer = new Ticketer(oneFormTicket, history, TD, oneFormTicketAttributes);
                     ticketer.createTickets();
-
-                    log.logHistory(history);
-                    Thread.sleep(5000);
                 }
-                else{
-                    history.addEvent(new LoggingEvent("ONE FORM TICKET ID: " + ticketID, "sendNewTicket", RequestCollector.class, Level.INFO));
-                    updateDeptTicket(TD, oneFormTicket);
-                    history.addEvent(new LoggingEvent("DEPT TICKET DESCRIPTION UPDATED", "sendNewTicket", RequestCollector.class, Level.INFO));
-                    log.logHistory(history);
 
-                }
-                return ResponseEntity.status(HttpStatus.OK).body(ticketID + " : The Oneform Program Has Finished Execution");
+
+                log.logHistory(history);
+                return ResponseEntity.status(HttpStatus.OK).body(ticketID + " : The Department Ticketer Has Finished Execution");
             }
             catch (TDException exception) {
-                history.addEvent(new LoggingEvent("Ticket ID: " + ticketID + ", " + exception, "sendNewTicket", RequestCollector.class, Level.SEVERE));
+                history.addEvent(new LoggingEvent("Ticket ID: " + ticketID + ", " + exception, "CreateDeptTicket", RequestCollector.class, Level.SEVERE));
                 log.logHistory(history);
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-                        ticketID + " : The Oneform Program Encountered an Error\n" +
+                        ticketID + " : The Department Ticketer Encountered an Error\n" +
                                 exception.getStatusCode() + " Error\n" +
                                 exception.getHttpRequestContents()
                 );
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
+
+            }
+            catch(Exception exception){
+                history.addEvent(new LoggingEvent("Ticket ID: " + ticketID + ", " + exception, "CreateDeptTickets", RequestCollector.class, Level.SEVERE));
+                log.logHistory(history);
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Department Ticketer encountered an exception:" + exception.getMessage());
             }
         }
         else

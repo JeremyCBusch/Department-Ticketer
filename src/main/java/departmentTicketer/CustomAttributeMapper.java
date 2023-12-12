@@ -1,7 +1,11 @@
 package departmentTicketer;
 
 import td.api.CustomAttribute;
+import td.api.Exceptions.TDException;
+import td.api.TeamDynamix;
 import td.api.Ticket;
+
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -18,7 +22,7 @@ import java.util.Map;
 public class CustomAttributeMapper {
 
     //These are the IDs for the letters of the initials in the FA form
-    private static Map<String, String> initialIDs = new HashMap<>() {{
+    private static final Map<String, String> initialIDs = new HashMap<>() {{
         put("A", "12509");
         put("B", "12510");
         put("C", "12511");
@@ -72,33 +76,20 @@ public class CustomAttributeMapper {
      * Get the ID of the override email choice
      *
      * @param attributes The attributes of the OneForm Ticket.
-     * @param deptTicketNum the number of the dept ticket being created
      * @return the ID of the override email action.
      */
-    public static String getOverrideEmailID(HashMap<Integer, CustomAttribute> attributes, int deptTicketNum) {
-        String override = "";
+    public static String getOverrideEmailID(HashMap<Integer, CustomAttribute> attributes) {
+        String admissionsOverride = attributes.getOrDefault(IDs.ADMISSIONS_OVERIDE_ID_ONEFORM, new CustomAttribute()).getValue();
 
-        CustomAttribute admissionsOverideAttr1 = attributes.getOrDefault(IDs.ADMISSIONS_OVERIDE_ID_ONEFORM, new CustomAttribute());
-        CustomAttribute admissionsOverideAttr2 = attributes.getOrDefault(IDs.ADMISSIONS_OVERIDE_2_ID_ONEFORM, new CustomAttribute());
-
-        if (admissionsOverideAttr1.getValue() != null && deptTicketNum == 0)
-            override = admissionsOverideAttr1.getValue();
-        else if (admissionsOverideAttr2.getValue() != null && deptTicketNum == 1)
-            override = admissionsOverideAttr2.getValue();
-
-
-        switch (override) {
+        switch (admissionsOverride) {
             case IDs.ADMISSIONS_OVERIDE_YES_ONEFORM:
-            case IDs.ADMISSIONS_OVERIDE_YES_2_ONEFORM:
                 return IDs.ADMISSIONS_OVERIDE_YES;
             case IDs.ADMISSIONS_OVERIDE_NO_ONEFORM:
-            case IDs.ADMISSIONS_OVERIDE_NO_2_ONEFORM:
                 return IDs.ADMISSIONS_OVERIDE_NO;
             case IDs.ADMISSIONS_OVERIDE_DOESNT_NEED_ONEFORM:
-            case IDs.ADMISSIONS_OVERIDE_DOESNT_NEED_2_ONEFORM:
                 return IDs.ADMISSIONS_OVERIDE_DOESNT_NEED;
+            default: return "0";
         }
-        return "0";
     }
 
 
@@ -107,68 +98,20 @@ public class CustomAttributeMapper {
      * Get the Id of the choice of the campus or online option
      *
      * @param attributes the attributes of the OneForm Ticket
-     * @param deptTicketNum the number of the dept ticket being created
      * @return The ID of the campus/online attribute as it corresponds to the one form's ID
      */
-    public static String getCampusOrOnline(HashMap<Integer, CustomAttribute> attributes, int deptTicketNum) {
-        String value = "";
+    public static String getCampusOrOnline(HashMap<Integer, CustomAttribute> attributes) {
+        String campOrOnline1 = attributes.getOrDefault(IDs.SRR_ONLINE_AND_CAMPUS_ATTRIBUTE_ID_ONEFORM, new CustomAttribute()).getValue();
 
-        CustomAttribute campOrOnline1 = attributes.getOrDefault(IDs.SRR_ONLINE_AND_CAMPUS_ATTRIBUTE_ID_ONEFORM, new CustomAttribute());
-        CustomAttribute campOrOnline2 = attributes.getOrDefault(IDs.SRR_ONLINE_AND_CAMPUS_2_ATTRIBUTE_ID_ONEFORM, new CustomAttribute());
-
-        if (campOrOnline1.getValue() != null && deptTicketNum == 0)
-            value = campOrOnline1.getValue();
-        if (campOrOnline2.getValue() != null && deptTicketNum == 1)
-            value = campOrOnline2.getValue();
-
-        switch (value) {
-            case IDs.SRR_ONLINE_AND_CAMPUS_2_ATTRIBUTE_ON_CAMPUS_ID_ONEFORM:
+        switch (campOrOnline1) {
             case IDs.SRR_ONLINE_AND_CAMPUS_ATTRIBUTE_ON_CAMPUS_ID_ONEFORM:
                 return IDs.SRR_ONLINE_AND_CAMPUS_ATTRIBUTE_ON_CAMPUS_ID;
-            case IDs.SRR_ONLINE_AND_CAMPUS_2_ATTRIBUTE_ONLINE_ID_ONEFORM:
             case IDs.SRR_ONLINE_AND_CAMPUS_ATTRIBUTE_ONLINE_ID_ONEFORM:
                 return IDs.SRR_ONLINE_AND_CAMPUS_ATTRIBUTE_ONLINE_ID;
-        }
-        return "0";
-    }
-
-    /**
-     * getTagText:
-     * get the text of the chosen tag on the oneform.
-     *
-     * @param tag1Text BSC Tag 1 text value
-     * @param tag2Text BSC Tag 2 text value
-     * @param deptTicketNum the number of the department ticket being created
-     * @return the text of the chosen tag on the oneform ticket
-     */
-    public static String getTagText(String tag1Text, String tag2Text, int deptTicketNum) { return ((deptTicketNum == 0) ? tag1Text : tag2Text); }
-
-    /**
-     * getChoiceTextID:
-     * get the ID of the Dept Ticket one form Tag text attribute
-     *
-     * @param appID The application ID of the Dept Ticket
-     * @return the ID of the chosen tag on the oneform ticket
-     */
-    public static int getChoiceTextID(int appID) {
-        switch (appID) {
-            case IDs.ACCOUNTING_APPLICATION_ID:
-                return IDs.ACCOUNTING_ONE_FORM_TAG_NAME_ID;
-            case IDs.BYUI_TICKETS_APPLICATION_ID:
-                return IDs.BYUI_TICKETS_ONE_FORM_TAG_NAME_ID;
-            case IDs.ADMISSIONS_APPLICATION_ID:
-                return IDs.ADMISSIONS_ONE_FORM_TAG_NAME_ID;
-            case IDs.FINANCIAL_AID_APPLICATION_ID:
-                return IDs.FINANCIAL_AID_ONE_FORM_TAG_NAME_ID;
-            case IDs.SRR_APPLICATION_ID:
-                return IDs.SRR_ONE_FORM_TAG_NAME_ID;
-            case IDs.ADVISING_APPLICATION_ID:
-                return IDs.ADVISING_ONE_FORM_TAG_NAME_ID;
             default:
-                return 0;
+                return "0";
         }
     }
-
 
     /**
      * getChoiceTextID:
@@ -191,6 +134,10 @@ public class CustomAttributeMapper {
                 return IDs.SRR_BSC_AGENT_NAME;
             case IDs.ADVISING_APPLICATION_ID:
                 return IDs.ADVISING_BSC_AGENT_NAME;
+            case IDs.IT_APPLICATION_ID:
+                return IDs.IT_BSC_AGENT_NAME;
+            case IDs.INTERNATIONAL_SERVICES_APP_ID:
+                return IDs.INTERNATIONAL_SERVICES_BSC_AGENT_NAME;
             default:
                 return 0;
         }
@@ -203,6 +150,8 @@ public class CustomAttributeMapper {
      * @param appID The application ID of the Dept Ticket
      * @return the ID of the Sent to Level 2 attribute
      */
+
+    //Sent to level2 id for new form = 2281
     public static int getSentToLevel2ID(int appID) {
         switch (appID) {
             case IDs.ACCOUNTING_APPLICATION_ID:
@@ -217,9 +166,44 @@ public class CustomAttributeMapper {
                 return IDs.SRR_SENT_TO_LEVEL_2;
             case IDs.ADVISING_APPLICATION_ID:
                 return IDs.ADVISING_SENT_TO_LEVEL_2;
+            case IDs.IT_APPLICATION_ID:
+                return IDs.IT_SENT_TO_LEVEL_2;
+            case IDs.INTERNATIONAL_SERVICES_APP_ID:
+                return IDs.INTERNATIONAL_SENT_TO_LEVEL_2;
             default:
                 return 0;
 
+        }
+    }
+
+
+    /**
+     * getChoiceTextID:
+     * get the ID of the Dept Ticket one form Tag text attribute
+     *
+     * @param appID The application ID of the Dept Ticket
+     * @return the ID of the chosen tag on the oneform ticket
+     */
+    public static int getChoiceTextID(int appID) {
+        switch (appID) {
+            case IDs.ACCOUNTING_APPLICATION_ID:
+                return IDs.ACCOUNTING_ONE_FORM_TAG_NAME_ID;
+            case IDs.BYUI_TICKETS_APPLICATION_ID:
+                return IDs.BYUI_TICKETS_ONE_FORM_TAG_NAME_ID;
+            case IDs.ADMISSIONS_APPLICATION_ID:
+                return IDs.ADMISSIONS_ONE_FORM_TAG_NAME_ID;
+            case IDs.FINANCIAL_AID_APPLICATION_ID:
+                return IDs.FINANCIAL_AID_ONE_FORM_TAG_NAME_ID;
+            case IDs.SRR_APPLICATION_ID:
+                return IDs.SRR_ONE_FORM_TAG_NAME_ID;
+            case IDs.ADVISING_APPLICATION_ID:
+                return IDs.ADVISING_ONE_FORM_TAG_NAME_ID;
+            case IDs.IT_APPLICATION_ID:
+                return IDs.IT_ONE_FORM_TAG_NAME_ID;
+            case IDs.INTERNATIONAL_SERVICES_APP_ID:
+                return IDs.INTERNATIONAL_SERVICES_NAME_ID;
+            default:
+                return 0;
         }
     }
 
@@ -245,6 +229,10 @@ public class CustomAttributeMapper {
                 return IDs.SRR_ONE_FORM_TICKETID_TAG_ID;
             case IDs.ADVISING_APPLICATION_ID:
                 return IDs.ADVISING_ONE_FORM_TICKETID_TAG_ID;
+            case IDs.IT_APPLICATION_ID:
+                return IDs.IT_ONE_FORM_TICKETID_TAG_ID;
+            case IDs.INTERNATIONAL_SERVICES_APP_ID:
+                return IDs.INTERNATIONAL_SERVICES_ONE_FORM_TICKETID_TAG_ID;
             default:
                 return 0;
         }
@@ -260,8 +248,7 @@ public class CustomAttributeMapper {
      *
      * @return An ID of the value of the Sent-to-level-two attribute choice.
      */
-    public static String getSentToLevel2Value(int appID, String generalActionsVal) {
-        // This checks if the action option on the ticket is in the arraylist of all action options that are level 2
+    public static String getSentToLevel2Value(int appID, String generalActionsVal) {//throws Exception
         boolean isSentToLevel2 = IDs.actionOptionsLevel2ChoiceIDs.contains(generalActionsVal);
 
         switch (appID) {
@@ -275,17 +262,109 @@ public class CustomAttributeMapper {
                 return ((isSentToLevel2) ? IDs.SRR_SENT_TO_LEVEL_2_YES : IDs.SRR_SENT_TO_LEVEL_2_NO);
             case (IDs.ADVISING_APPLICATION_ID):
                 return ((isSentToLevel2) ? IDs.ADVISING_SENT_TO_LEVEL_2_YES : IDs.ADVISING_SENT_TO_LEVEL_2_NO);
+            case (IDs.IT_APPLICATION_ID):
+                return ((isSentToLevel2) ? IDs.IT_SENT_TO_LEVEL_2_YES : IDs.IT_SENT_TO_LEVEL_2_NO);
+            case (IDs.INTERNATIONAL_SERVICES_APP_ID):
+                return ((isSentToLevel2) ? IDs.INTERNATIONAL_SENT_TO_LEVEL_2_YES : IDs.INTERNATIONAL_SENT_TO_LEVEL_2_NO);
             default:
-                // Enrollment Services should default everytime and not be sent to level 2
+//                if (isSentToLevel2) throw new Exception("BYUI tickets dept ticket should not have sent to level 2 as \"yes\"");
+//                return IDs.GENERAL_SENT_TO_LEVEL_2_NO;
                 return ((isSentToLevel2) ? IDs.GENERAL_SENT_TO_LEVEL_2_YES : IDs.GENERAL_SENT_TO_LEVEL_2_NO);
         }
     }
 
+    /**
+     * Get Agent Name
+     *
+     * Returns the UID of the BSC agent custom attribute or who created the ticket
+     *
+     * @param oneFormTicket
+     * @param attributes
+     * @return
+     */
     public static String getAgentName(Ticket oneFormTicket, HashMap<Integer, CustomAttribute> attributes){
         CustomAttribute defaultAttribute = new CustomAttribute();
-        if (oneFormTicket.getFormId() == IDs.EMAIL_FORM_ID)
-            return attributes.getOrDefault(IDs.BSC_AGENT_ID, defaultAttribute).getValueText();
-        else
+        if (oneFormTicket.getFormId() == IDs.LIVE_CHAT_FORM_ID)
             return oneFormTicket.getCreatedFullName();
+        else
+            return attributes.getOrDefault(IDs.BSC_AGENT_ID, defaultAttribute).getValueText();
+    }
+
+    /**
+     * One Form Ticket Has Department Ticket
+     *
+     * checks if the dept ticket ID custom attribute is in the one form ticket
+     *
+     * @param TD
+     * @param ticket
+     * @return
+     */
+    public static boolean NeedToUpdateDepartmentTicket(TeamDynamix TD, Ticket ticket) throws TDException {
+        HashMap<Integer, CustomAttribute> attributes = ticket.getAttributesHashMap();
+
+        int deptTicketID = Integer.parseInt(attributes.getOrDefault(IDs.DEPARTMENT_TICKET_ID, new CustomAttribute(0,"0")).getValue());
+        if (deptTicketID == 0)
+            return false;
+
+        int officeList1 = Integer.parseInt(attributes.get(IDs.OFFICE_LIST_1_ATTRIBUTE_ID).getValue());
+        int appID = DefaultAttributeMapper.getAppId(officeList1);
+        int deptTicketAppID = Integer.parseInt(attributes.getOrDefault(IDs.DEPT_TICKET_APP_ID_ID, new CustomAttribute(0,"0")).getValue());
+
+        return (deptTicketAppID == appID);    //Checks if the office list has been changed since the dept ticket was created
+    }
+
+    /**
+     * Office is Spam Or Abandoned
+     *
+     * Checks if the office list value is spam or abandoned
+     * @param oneFormTicketAttributes
+     * @return
+     */
+    public static boolean officeIsSpamOrAbandoned(HashMap<Integer, CustomAttribute> oneFormTicketAttributes) {
+        int officeList = Integer.parseInt(oneFormTicketAttributes.get(IDs.OFFICE_LIST_1_ATTRIBUTE_ID).getValue());
+        return officeList == IDs.SPAM_OFFICE_LIST_1_VAL || officeList == IDs.ABANDONED_OFFICE_LIST_1_VAL;
+    }
+    
+
+    public static String generalFormOffice(int officeListVal) {
+        switch (officeListVal) {
+            case IDs.ACADEMIC_OFFICE_LIST_VAL:
+                return IDs.ACADEMIC_OFFICE_LIST_GENERAL_FORM;
+            case IDs.ACCOUNTING_OFFICE_LIST_VAL:
+                return IDs.ACCOUNTING_OFFICE_LIST_GENERAL_FORM;
+            case IDs.ADMISSIONS_OFFICE_LIST_VAL:
+                return IDs.ADMISSIONS_OFFICE_LIST_GENERAL_FORM;
+            case IDs.ADVISING_OFFICE_LIST_VAL:
+                return IDs.ADVISING_OFFICE_LIST_GENERAL_FORM;
+            case IDs.ENROLLMENT_SERVICES_OFFICE_LIST_VAL:
+                return IDs.ENROLLMENT_SERVICES_OFFICE_LIST_GENERAL_FORM;
+            case IDs.FINANCIAL_AID_OFFICE_LIST_VAL:
+                return IDs.FINANCIAL_AID_OFFICE_LIST_GENERAL_FORM;
+            case IDs.GENERAL_OFFICE_LIST_VAL:
+                return IDs.GENERAL_OFFICE_LIST_GENERAL_FORM;
+            case IDs.IT_OFFICE_LIST_VAL:
+                return IDs.IT_OFFICE_LIST_GENERAL_FORM;
+            case IDs.SRR_OFFICE_LIST_VAL:
+                return IDs.SRR_OFFICE_LIST_GENERAL_FORM;
+            case IDs.UNIVERSITY_STORE_OFFICE_LIST_VAL:
+                return IDs.UNIVERSITY_STORE_OFFICE_LIST_GENERAL_FORM;
+        }
+        return "";
+    }
+
+
+    /**
+     * Edits a specified Custom Attribute with a specified value
+     * @param attributes
+     * @param ID
+     * @param newValue
+     * @return the edited Custom Attribute ArrayList
+     */
+    public static ArrayList<CustomAttribute> editAttribute(ArrayList<CustomAttribute> attributes, int ID, String newValue){
+        for (int i = 0; i < attributes.size(); i++){
+            if (attributes.get(i).getId() == ID)
+                attributes.set(i, new CustomAttribute(attributes.get(i).getId(), newValue));
+        }
+        return attributes;
     }
 }
